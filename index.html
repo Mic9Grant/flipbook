@@ -1,14 +1,21 @@
 <!DOCTYPE html>
+<!--
+  Pageturner — Document Flipbook
+  © 2026 Danvion Michael Grant — all rights reserved
+-->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="author" content="Danvion Michael Grant">
+<meta name="copyright" content="© 2026 Danvion Michael Grant — all rights reserved">
 <title>Pageturner — Document Flipbook</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.4.2/mammoth.browser.min.js"></script>
 <style>
+  /* © 2026 Danvion Michael Grant — all rights reserved */
   :root{
     --desk:#243329;
     --desk-deep:#1a2620;
@@ -48,7 +55,7 @@
     border-bottom:1px solid rgba(227,188,109,.18);
     background:linear-gradient(180deg, rgba(0,0,0,.25), rgba(0,0,0,0));
   }
-  .brand{display:flex;align-items:baseline;gap:10px;margin-right:auto}
+  .brand{display:flex;align-items:baseline;gap:10px;margin-right:auto;min-width:0}
   .brand h1{
     font-family:'Fraunces',serif;font-weight:700;font-size:1.45rem;
     letter-spacing:.01em;color:var(--paper);
@@ -68,10 +75,9 @@
     font:inherit;font-size:.82rem;font-weight:500;padding:8px 16px;cursor:pointer;
     display:flex;align-items:center;gap:8px;transition:background .2s,color .2s;
   }
-  .seg button svg{width:15px;height:15px;transition:transform .45s cubic-bezier(.34,1.4,.5,1)}
+  .seg button svg{width:15px;height:15px}
   .seg button.active{background:var(--brass);color:#241c0c}
   .seg button:not(.active):hover{color:var(--paper)}
-  .seg button.active svg{transform:rotate(0deg)}
 
   .btn{
     appearance:none;border:1px solid rgba(227,188,109,.45);border-radius:999px;
@@ -83,15 +89,27 @@
   .btn.primary:hover{background:var(--brass-bright)}
   .btn:focus-visible,.seg button:focus-visible{outline:2px solid var(--brass-bright);outline-offset:2px}
 
-  /* ---------- stage ---------- */
-  main{flex:1;position:relative;display:flex;align-items:center;justify-content:center;min-height:0}
-  #scaler{transform-origin:center center;transition:transform .35s ease}
+  /* ---------- viewport / zoom canvas ---------- */
+  main{
+    flex:1;position:relative;display:flex;min-height:0;
+    overflow:hidden;touch-action:pan-x pan-y;
+  }
+  body.zoomed main{overflow:auto;cursor:grab}
+  body.panning main, body.panning main *{cursor:grabbing !important}
+  main::-webkit-scrollbar{width:10px;height:10px}
+  main::-webkit-scrollbar-thumb{background:rgba(227,188,109,.35);border-radius:10px}
+  main::-webkit-scrollbar-track{background:transparent}
+
+  /* sized to the scaled book so the viewport can scroll around it */
+  #zoom-canvas{position:relative;flex:none;margin:auto}
+  #scaler{position:absolute;left:24px;top:20px;transform-origin:0 0}
+
   #stage{
     position:relative;perspective:2600px;
     width:calc(var(--page-w)*2);height:var(--page-h);
     filter:drop-shadow(0 30px 40px rgba(0,0,0,.45));
-    transition:width .3s ease,height .3s ease;
   }
+  body.zoomed #stage{filter:none}          /* keeps panning smooth at high zoom */
   #stage.vertical{width:var(--page-w);height:calc(var(--page-h)*2)}
 
   /* base of the closed side of the book */
@@ -100,7 +118,6 @@
     box-shadow:inset 0 0 0 1px var(--paper-edge);display:none;
   }
   #stage.has-left .base.left{display:block;left:0;top:0;width:var(--page-w);height:var(--page-h)}
-  #stage.vertical.has-left .base.left{width:var(--page-w);height:var(--page-h);left:0;top:0}
   #stage.has-right .base.right{display:block;right:0;bottom:0;width:var(--page-w);height:var(--page-h)}
 
   .sheet{
@@ -123,9 +140,9 @@
   #stage.vertical .face{border-radius:0 0 4px 4px}
   #stage.vertical .face.back{transform:rotateX(180deg);border-radius:4px 4px 0 0}
 
-  /* spine shading — deepens while a sheet is mid-flip */
+  /* spine shading */
   .face::after{
-    content:"";position:absolute;inset:0;pointer-events:none;transition:opacity var(--flip-ms);
+    content:"";position:absolute;inset:0;pointer-events:none;
     background:linear-gradient(90deg, rgba(60,45,20,.20), rgba(60,45,20,0) 12%);
     opacity:.7;
   }
@@ -159,6 +176,7 @@
   .page.image-page,.page.pdf-page{background:#fff}
   .page.image-page img,.page.pdf-page img{
     position:absolute;inset:0;width:100%;height:100%;object-fit:contain;
+    user-select:none;-webkit-user-drag:none;
   }
   .page.cover{
     background:
@@ -171,6 +189,7 @@
   .page.cover h1{font-family:'Fraunces',serif;font-size:2.5rem;color:var(--paper);margin-bottom:10px}
   .page.cover p{color:var(--sage)}
   .page.cover .rule{width:56px;height:2px;background:var(--brass);margin-bottom:22px}
+  .page.cover .cover-note{margin-top:26px;font-size:.7rem;letter-spacing:.06em;color:var(--sage);opacity:.8}
 
   /* click zones */
   .zone{position:absolute;z-index:400;cursor:pointer;background:transparent;border:0;padding:0}
@@ -182,9 +201,13 @@
 
   /* ---------- footer controls ---------- */
   footer{
-    display:flex;align-items:center;justify-content:center;gap:20px;
-    padding:14px 20px 20px;z-index:5;
+    display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:16px;
+    padding:12px 26px 16px;z-index:5;
+    border-top:1px solid rgba(227,188,109,.12);
+    background:linear-gradient(0deg, rgba(0,0,0,.25), rgba(0,0,0,0));
   }
+  .copyright{justify-self:start;font-size:.72rem;color:var(--sage);letter-spacing:.03em}
+  .pager{display:flex;align-items:center;gap:20px}
   .nav-btn{
     width:44px;height:44px;border-radius:50%;border:1px solid rgba(227,188,109,.45);
     background:rgba(0,0,0,.25);color:var(--paper);cursor:pointer;
@@ -201,7 +224,46 @@
     color:var(--paper);min-width:130px;text-align:center;
   }
   #indicator span{color:var(--brass-bright)}
-  .hint{position:fixed;bottom:74px;width:100%;text-align:center;font-size:.72rem;color:var(--sage);letter-spacing:.06em;pointer-events:none}
+
+  /* zoom cluster */
+  .zoom{
+    justify-self:end;display:flex;align-items:center;gap:6px;
+    border:1px solid rgba(227,188,109,.45);border-radius:999px;
+    background:rgba(0,0,0,.25);padding:4px 6px;
+  }
+  .z-btn{
+    width:32px;height:32px;border-radius:50%;border:0;background:transparent;
+    color:var(--paper);cursor:pointer;display:flex;align-items:center;justify-content:center;
+    transition:background .2s;
+  }
+  .z-btn svg{width:17px;height:17px}
+  .z-btn:hover:not(:disabled){background:rgba(192,149,67,.3)}
+  .z-btn:disabled{opacity:.3;cursor:default}
+  .z-reset{
+    appearance:none;border:0;border-radius:999px;background:transparent;cursor:pointer;
+    font:inherit;font-size:.8rem;font-weight:600;color:var(--brass-bright);
+    min-width:58px;padding:7px 10px;font-variant-numeric:tabular-nums;transition:background .2s;
+  }
+  .z-reset:hover{background:rgba(192,149,67,.25)}
+  .z-btn:focus-visible,.z-reset:focus-visible,#zoom-range:focus-visible{outline:2px solid var(--brass-bright);outline-offset:2px}
+  #zoom-range{
+    -webkit-appearance:none;appearance:none;width:96px;height:4px;border-radius:4px;
+    background:linear-gradient(90deg,var(--brass) var(--fill,0%),rgba(255,255,255,.18) var(--fill,0%));
+    cursor:pointer;
+  }
+  #zoom-range::-webkit-slider-thumb{
+    -webkit-appearance:none;width:14px;height:14px;border-radius:50%;
+    background:var(--brass-bright);border:2px solid #241c0c;
+  }
+  #zoom-range::-moz-range-thumb{
+    width:12px;height:12px;border-radius:50%;background:var(--brass-bright);border:2px solid #241c0c;
+  }
+
+  .hint{
+    position:fixed;bottom:84px;width:100%;text-align:center;font-size:.72rem;color:var(--sage);
+    letter-spacing:.06em;pointer-events:none;transition:opacity .3s;
+  }
+  body.zoomed .hint{opacity:0}
 
   /* ---------- drop overlay & loader ---------- */
   #drop-overlay{
@@ -226,6 +288,14 @@
   #loader p{font-size:.85rem;color:var(--sage);letter-spacing:.1em}
   #file-input{display:none}
 
+  @media (max-width:760px){
+    header{padding:12px 16px;gap:10px}
+    footer{grid-template-columns:1fr;justify-items:center;gap:10px;padding:10px 16px 12px}
+    .copyright{justify-self:center;order:3}
+    .zoom{justify-self:center}
+    #zoom-range{display:none}
+    .hint{display:none}
+  }
   @media (prefers-reduced-motion:reduce){
     .sheet{transition:none}
     .spinner{animation:none}
@@ -255,50 +325,81 @@
   <input type="file" id="file-input" accept=".pdf,.docx,.txt,.md,.html,.htm,image/*">
 </header>
 
-<main>
-  <div id="scaler">
-    <div id="stage" class="has-right">
-      <div class="base left"></div>
-      <div class="base right"></div>
-      <div id="sheets"></div>
-      <button class="zone prev" aria-label="Previous page"></button>
-      <button class="zone next" aria-label="Next page"></button>
+<main id="viewport">
+  <div id="zoom-canvas">
+    <div id="scaler">
+      <div id="stage" class="has-right">
+        <div class="base left"></div>
+        <div class="base right"></div>
+        <div id="sheets"></div>
+        <button class="zone prev" aria-label="Previous page"></button>
+        <button class="zone next" aria-label="Next page"></button>
+      </div>
     </div>
   </div>
 </main>
 
-<p class="hint">Arrow keys flip pages · drop a file anywhere to open it</p>
+<p class="hint">Arrow keys flip pages · Ctrl + scroll or double-click to zoom · drop a file anywhere to open it</p>
 
 <footer id="stage-nav">
-  <button class="nav-btn" id="prev-btn" aria-label="Previous page">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M15 5l-7 7 7 7"/></svg>
-  </button>
-  <div id="indicator" aria-live="polite">— / —</div>
-  <button class="nav-btn" id="next-btn" aria-label="Next page">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M9 5l7 7-7 7"/></svg>
-  </button>
+  <p class="copyright">© 2026 Danvion Michael Grant — all rights reserved</p>
+
+  <div class="pager">
+    <button class="nav-btn" id="prev-btn" aria-label="Previous page">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M15 5l-7 7 7 7"/></svg>
+    </button>
+    <div id="indicator" aria-live="polite">— / —</div>
+    <button class="nav-btn" id="next-btn" aria-label="Next page">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M9 5l7 7-7 7"/></svg>
+    </button>
+  </div>
+
+  <div class="zoom" role="group" aria-label="Zoom">
+    <button class="z-btn" id="zoom-out" aria-label="Zoom out" title="Zoom out (−)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5M8 11h6"/></svg>
+    </button>
+    <input type="range" id="zoom-range" min="100" max="500" step="5" value="100" aria-label="Zoom level">
+    <button class="z-btn" id="zoom-in" aria-label="Zoom in" title="Zoom in (+)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5M8 11h6M11 8v6"/></svg>
+    </button>
+    <button class="z-reset" id="zoom-reset" title="Fit book to window (0)">100%</button>
+  </div>
 </footer>
 
 <div id="drop-overlay"><div class="box">Drop it on the desk</div></div>
 <div id="loader"><div class="spinner"></div><p id="loader-msg">PREPARING PAGES…</p></div>
 
 <script>
+/* Pageturner — © 2026 Danvion Michael Grant — all rights reserved */
 (() => {
-  // NOTE: pdf.js worker is configured lazily inside loadPDF().
-  // Doing it here crashed the whole script (ReferenceError) whenever the
-  // CDN script failed to load, which left every button — including
-  // "Open a file" — without its event listener.
+  if (window.pdfjsLib) {
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  }
 
   const PAGE_W = 430, PAGE_H = 560;
+  const PAD_X = 24, PAD_Y = 20;            // breathing room around the book
+  const ZOOM_MIN = 1, ZOOM_MAX = 5, ZOOM_STEP = 1.25;
+  const MAX_RENDER_W = 3200;               // cap for sharp PDF re-renders (px)
+  const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
   const stage      = document.getElementById('stage');
   const sheetsRoot = document.getElementById('sheets');
   const scaler     = document.getElementById('scaler');
+  const view       = document.getElementById('viewport');
+  const zcanvas    = document.getElementById('zoom-canvas');
   const indicator  = document.getElementById('indicator');
   const docName    = document.getElementById('doc-name');
   const loader     = document.getElementById('loader');
   const loaderMsg  = document.getElementById('loader-msg');
+  const zoomRange  = document.getElementById('zoom-range');
+  const zoomReset  = document.getElementById('zoom-reset');
+  const zoomInBtn  = document.getElementById('zoom-in');
+  const zoomOutBtn = document.getElementById('zoom-out');
 
-  const state = { pages: [], sheets: [], pos: 0, mode: 'h', busy: false };
+  const state = { pages: [], sheets: [], pos: 0, mode: 'h', busy: false, zoom: 1, pdf: null };
+  let fitScale = 1;       // scale at which the whole book fits the window
+  let curScale = 1;       // fitScale * zoom, currently applied
 
   /* ================= book construction ================= */
 
@@ -308,11 +409,22 @@
     return p;
   }
 
-  function buildBook(pages) {
+  function releasePages(pages) {
+    pages.forEach(p => p.querySelectorAll('img').forEach(img => {
+      if (img.src.startsWith('blob:')) URL.revokeObjectURL(img.src);
+    }));
+  }
+
+  function buildBook(pages, pdfDoc = null) {
+    releasePages(state.pages);
+    if (state.pdf && state.pdf !== pdfDoc) { try { state.pdf.destroy(); } catch (e) {} }
+    state.pdf = pdfDoc;
+
     sheetsRoot.innerHTML = '';
     state.pages = pages;
     state.sheets = [];
     state.pos = 0;
+    state.zoom = 1;
 
     const nSheets = Math.ceil(pages.length / 2);
     for (let k = 0; k < nSheets; k++) {
@@ -341,6 +453,16 @@
     });
   }
 
+  function syncNav() {
+    const n = state.sheets.length;
+    stage.classList.toggle('has-left', state.pos > 0);
+    stage.classList.toggle('has-right', state.pos < n);
+    updateIndicator();
+    document.getElementById('prev-btn').disabled = state.pos === 0;
+    document.getElementById('next-btn').disabled = state.pos >= n;
+    scheduleSharpen();
+  }
+
   function render(instant = false) {
     const n = state.sheets.length;
     state.sheets.forEach((sheet, k) => {
@@ -349,11 +471,7 @@
       sheet.style.zIndex = (k < state.pos) ? (k + 1) : (n - k);
       if (instant) requestAnimationFrame(() => sheet.classList.remove('no-anim'));
     });
-    stage.classList.toggle('has-left', state.pos > 0);
-    stage.classList.toggle('has-right', state.pos < n);
-    updateIndicator();
-    document.getElementById('prev-btn').disabled = state.pos === 0;
-    document.getElementById('next-btn').disabled = state.pos >= n;
+    syncNav();
   }
 
   function updateIndicator() {
@@ -376,24 +494,30 @@
     state.busy = true;
     sheet.style.zIndex = 999;                    // ride above everything mid-flip
     state.pos = target;
-
     sheet.classList.toggle('flipped', dir > 0);
-    stage.classList.toggle('has-left', state.pos > 0);
-    stage.classList.toggle('has-right', state.pos < state.sheets.length);
-    updateIndicator();
-    document.getElementById('prev-btn').disabled = state.pos === 0;
-    document.getElementById('next-btn').disabled = state.pos >= state.sheets.length;
+    syncNav();
 
-    const done = () => { sheet.removeEventListener('transitionend', done); state.busy = false; render(); };
+    let finished = false;
+    const done = () => {
+      if (finished) return;
+      finished = true;
+      sheet.removeEventListener('transitionend', done);
+      state.busy = false;
+      render();
+    };
     sheet.addEventListener('transitionend', done);
-    setTimeout(done, 850);                       // safety net
+    setTimeout(done, reduceMotion ? 0 : 850);    // safety net
+  }
+
+  function jumpTo(pos) {
+    state.pos = Math.max(0, Math.min(pos, state.sheets.length));
+    render(true);
   }
 
   /* ================= mode toggle ================= */
 
   function setMode(mode) {
     state.mode = mode;
-    // suppress transitions so sheets don't tumble while axes swap
     state.sheets.forEach(s => s.classList.add('no-anim'));
     stage.classList.toggle('vertical', mode === 'v');
     document.getElementById('stage-nav').classList.toggle('vertical', mode === 'v');
@@ -406,16 +530,122 @@
     fit();
   }
 
-  /* ================= responsive scaling ================= */
+  /* ================= fit & zoom ================= */
+
+  const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+  const bookSize = () => state.mode === 'v' ? [PAGE_W, PAGE_H * 2] : [PAGE_W * 2, PAGE_H];
 
   function fit() {
-    const main = document.querySelector('main');
-    const bw = state.mode === 'v' ? PAGE_W : PAGE_W * 2;
-    const bh = state.mode === 'v' ? PAGE_H * 2 : PAGE_H;
-    const s = Math.min((main.clientWidth - 48) / bw, (main.clientHeight - 40) / bh, 1.15);
-    scaler.style.transform = `scale(${Math.max(s, .25)})`;
+    const [bw, bh] = bookSize();
+    const r = view.getBoundingClientRect();     // includes scrollbars, so it stays stable
+    fitScale = Math.max(.2, Math.min((r.width - PAD_X * 2 - 2) / bw, (r.height - PAD_Y * 2 - 2) / bh, 1.15));
+    applyZoom(state.zoom);
   }
+
+  // Set the zoom level, keeping the point (fx, fy) — in screen coords — fixed under the cursor.
+  function applyZoom(z, fx, fy) {
+    z = clamp(z, ZOOM_MIN, ZOOM_MAX);
+    if (Math.abs(z - 1) < 0.02) z = 1;          // snap back to fit
+
+    const vr = view.getBoundingClientRect();
+    if (fx == null) { fx = vr.left + view.clientWidth / 2; fy = vr.top + view.clientHeight / 2; }
+
+    const before = zcanvas.getBoundingClientRect();
+    const bx = (fx - before.left - PAD_X) / curScale;
+    const by = (fy - before.top - PAD_Y) / curScale;
+
+    state.zoom = z;
+    curScale = fitScale * z;
+    const [bw, bh] = bookSize();
+    zcanvas.style.width  = Math.floor(bw * curScale + PAD_X * 2) + 'px';
+    zcanvas.style.height = Math.floor(bh * curScale + PAD_Y * 2) + 'px';
+    scaler.style.transform = `scale(${curScale})`;
+    document.body.classList.toggle('zoomed', z > 1);
+
+    const after = zcanvas.getBoundingClientRect();
+    view.scrollLeft += (after.left + PAD_X + bx * curScale) - fx;
+    view.scrollTop  += (after.top  + PAD_Y + by * curScale) - fy;
+
+    updateZoomUI();
+    scheduleSharpen();
+  }
+
+  let zoomAnim = 0;
+  function zoomTo(target, fx, fy) {
+    target = clamp(target, ZOOM_MIN, ZOOM_MAX);
+    cancelAnimationFrame(zoomAnim);
+    if (reduceMotion) { applyZoom(target, fx, fy); return; }
+    const start = state.zoom, t0 = performance.now(), dur = 220;
+    const step = now => {
+      const t = Math.min(1, (now - t0) / dur);
+      const e = 1 - Math.pow(1 - t, 3);
+      applyZoom(start * Math.pow(target / start, e), fx, fy);   // log-space feels even
+      if (t < 1) zoomAnim = requestAnimationFrame(step);
+    };
+    zoomAnim = requestAnimationFrame(step);
+  }
+
+  const zoomIn    = () => zoomTo(state.zoom * ZOOM_STEP);
+  const zoomOut   = () => zoomTo(state.zoom / ZOOM_STEP);
+  const zoomReset_ = () => zoomTo(1);
+
+  function updateZoomUI() {
+    const pct = Math.round(state.zoom * 100);
+    zoomReset.textContent = pct + '%';
+    zoomRange.value = pct;
+    zoomRange.style.setProperty('--fill', ((pct - 100) / 400 * 100) + '%');
+    zoomOutBtn.disabled = state.zoom <= ZOOM_MIN;
+    zoomInBtn.disabled  = state.zoom >= ZOOM_MAX;
+  }
+
   window.addEventListener('resize', fit);
+
+  /* ================= sharper PDF pages when zoomed ================= */
+
+  let sharpenTimer = 0, renderChain = Promise.resolve();
+
+  function scheduleSharpen() {
+    clearTimeout(sharpenTimer);
+    sharpenTimer = setTimeout(sharpenVisible, 260);
+  }
+
+  function sharpenVisible() {
+    if (!state.pdf) return;
+    const need = Math.min(MAX_RENDER_W,
+      Math.ceil(PAGE_W * curScale * (window.devicePixelRatio || 1)));
+    const p = state.pos;
+    [2 * p - 1, 2 * p, 2 * p + 1, 2 * p - 2].forEach(i => {
+      const el = state.pages[i];
+      if (!el || el._pdf !== state.pdf || +el.dataset.renderW >= need * 0.9) return;
+      renderChain = renderChain.then(() => renderPdfPage(el, need)).catch(() => {});
+    });
+  }
+
+  async function renderPdfPage(el, targetW) {
+    const doc = el._pdf;
+    if (!doc || +el.dataset.renderW >= targetW * 0.9) return;
+    const page = await doc.getPage(+el.dataset.pdfPage);
+    const vp = page.getViewport({ scale: 1 });
+    const scale = Math.min(targetW / vp.width, (targetW * PAGE_H / PAGE_W) / vp.height);
+    const v = page.getViewport({ scale });
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.ceil(v.width);
+    canvas.height = Math.ceil(v.height);
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    await page.render({ canvasContext: ctx, viewport: v }).promise;
+    const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', .92));
+    canvas.width = canvas.height = 0;
+    page.cleanup();
+    if (!blob) return;
+
+    const img = el.querySelector('img');
+    const old = img.getAttribute('src');
+    img.src = URL.createObjectURL(blob);
+    if (old && old.startsWith('blob:')) img.addEventListener('load', () => URL.revokeObjectURL(old), { once: true });
+    el.dataset.renderW = targetW;
+  }
 
   /* ================= file loading ================= */
 
@@ -434,14 +664,11 @@
   // Flow arbitrary HTML into fixed-size pages by measuring real heights.
   function paginateHTML(html) {
     const meas = document.createElement('div');
+    meas.className = 'page-body';
     meas.style.cssText =
       `position:absolute;visibility:hidden;left:-9999px;top:0;width:${CONTENT_W}px;` +
+      `height:auto;inset:auto;padding:0;` +
       `font-family:'IBM Plex Sans',sans-serif;font-size:14.5px;line-height:1.62;`;
-    meas.className = 'page-body';
-    meas.style.position = 'absolute';
-    meas.style.padding = '0';
-    meas.style.height = 'auto';
-    meas.style.inset = 'auto';
     document.body.appendChild(meas);
 
     const src = document.createElement('div');
@@ -464,8 +691,8 @@
       if (!fits()) {
         cur.removeChild(cur.lastChild);
         if (cur.childNodes.length) push();
-        // element alone on a fresh page — split long text blocks by words
         cur.appendChild(block.cloneNode(true));
+        // element alone on a fresh page — split long text blocks by words
         if (!fits() && block.textContent.length > 200 && !block.querySelector('img,table')) {
           cur.removeChild(cur.lastChild);
           const words = block.textContent.split(/\s+/);
@@ -492,60 +719,32 @@
     const p = blankPage();
     p.classList.add(cls);
     const img = document.createElement('img');
-    img.src = url;
     img.alt = '';
+    img.draggable = false;
+    if (url) img.src = url;
     p.appendChild(img);
     return p;
   }
 
-  const PDF_WORKER_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-
-  // Browsers refuse to run cross-origin worker scripts, and some environments
-  // also block pdf.js's "fake worker" fallback. Fetching the worker code as
-  // text and serving it from a same-origin blob: URL sidesteps both problems.
-  async function ensurePdfWorker() {
-    if (ensurePdfWorker.ready) return;
-    try {
-      const res = await fetch(PDF_WORKER_URL);
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      const code = await res.text();
-      const blob = new Blob([code], { type: 'text/javascript' });
-      pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(blob);
-    } catch (e) {
-      // Last resort: let pdf.js try the CDN URL directly.
-      pdfjsLib.GlobalWorkerOptions.workerSrc = PDF_WORKER_URL;
-    }
-    ensurePdfWorker.ready = true;
-  }
-
   async function loadPDF(file) {
-    if (typeof pdfjsLib === 'undefined') {
-      throw new Error('The PDF library (pdf.js) failed to load from the CDN — check your internet connection and reload the page.');
-    }
-    await ensurePdfWorker();
-    const buf = await file.arrayBuffer();
-    const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+    if (!window.pdfjsLib) throw new Error('the PDF reader could not load — check your internet connection');
+    const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
     const pages = [];
     for (let i = 1; i <= pdf.numPages; i++) {
       loaderMsg.textContent = `RENDERING PAGE ${i} OF ${pdf.numPages}…`;
-      const page = await pdf.getPage(i);
-      const vp = page.getViewport({ scale: 1 });
-      const scale = Math.min((PAGE_W * 2) / vp.width, (PAGE_H * 2) / vp.height);
-      const v = page.getViewport({ scale });
-      const canvas = document.createElement('canvas');
-      canvas.width = v.width; canvas.height = v.height;
-      await page.render({ canvasContext: canvas.getContext('2d'), viewport: v }).promise;
-      pages.push(imagePage(canvas.toDataURL('image/jpeg', .92), 'pdf-page'));
+      const el = imagePage(null, 'pdf-page');
+      el._pdf = pdf;
+      el.dataset.pdfPage = i;
+      el.dataset.renderW = 0;
+      await renderPdfPage(el, PAGE_W * 2);
+      pages.push(el);
     }
-    return pages;
+    return { pages, pdf };
   }
 
   async function loadDOCX(file) {
-    if (typeof mammoth === 'undefined') {
-      throw new Error('The Word document library (mammoth.js) failed to load from the CDN — check your internet connection and reload the page.');
-    }
-    const buf = await file.arrayBuffer();
-    const result = await mammoth.convertToHtml({ arrayBuffer: buf });
+    if (!window.mammoth) throw new Error('the Word reader could not load — check your internet connection');
+    const result = await mammoth.convertToHtml({ arrayBuffer: await file.arrayBuffer() });
     return paginateHTML(result.value || '<p>(empty document)</p>');
   }
 
@@ -560,9 +759,9 @@
     loader.classList.add('show');
     loaderMsg.textContent = 'PREPARING PAGES…';
     try {
-      let pages;
+      let pages, pdfDoc = null;
       if (ext === 'pdf' || file.type === 'application/pdf') {
-        pages = await loadPDF(file);
+        ({ pages, pdf: pdfDoc } = await loadPDF(file));
       } else if (ext === 'docx') {
         pages = await loadDOCX(file);
       } else if (file.type.startsWith('image/')) {
@@ -573,16 +772,17 @@
       } else if (['txt', 'md'].includes(ext) || file.type.startsWith('text/')) {
         pages = paginateHTML(textToHTML(await file.text()));
       } else {
-        alert('Unsupported file type. Try PDF, DOCX, TXT, MD, HTML, or an image.');
+        alert('That file type isn’t supported. Open a PDF, DOCX, TXT, MD, HTML, or image file.');
         return;
       }
       if (!pages.length) pages = [blankPage()];
       docName.textContent = file.name;
-      buildBook(pages);
+      buildBook(pages, pdfDoc);
+      view.scrollTo(0, 0);
       fit();
     } catch (err) {
       console.error(err);
-      alert('Could not open that file: ' + err.message);
+      alert('Couldn’t open that file: ' + err.message);
     } finally {
       loader.classList.remove('show');
     }
@@ -598,7 +798,8 @@
         <div class="kicker">A reading desk for your files</div>
         <div class="rule"></div>
         <h1>Pageturner</h1>
-        <p>Open any document and leaf through it like a real book — sideways or upwards, your call.</p>
+        <p>Open any document and leaf through it like a real book — sideways or upwards, and up close whenever you need to.</p>
+        <p class="cover-note">© 2026 Danvion Michael Grant — all rights reserved</p>
       </div>`;
 
     const inner = `
@@ -613,6 +814,17 @@
         <li><strong>Horizontal</strong> — a classic open book. Pages turn at the spine, left and right.</li>
         <li><strong>Vertical</strong> — calendar style. Pages lift up and over the top edge.</li>
       </ul>
+      <h2>Zooming in</h2>
+      <p>Get close to small print or fine detail in an image, up to 500%.</p>
+      <ul>
+        <li>Use the <strong>magnifier buttons</strong> or the <strong>slider</strong> at the bottom right.</li>
+        <li><strong>Double-click</strong> a page to zoom straight into that spot; double-click again to fit.</li>
+        <li>Hold <strong>Ctrl</strong> (or <strong>⌘</strong>) and scroll, or <strong>pinch</strong> on a touch screen.</li>
+        <li>Press <strong>+</strong> and <strong>−</strong> on the keyboard; <strong>0</strong> or <strong>Esc</strong> fits the book again.</li>
+        <li>While zoomed, <strong>drag</strong> the page or scroll to move around.</li>
+        <li>Click the <strong>percentage</strong> to return to the full view.</li>
+      </ul>
+      <p>PDF pages are redrawn at higher resolution as you zoom, so text stays sharp.</p>
       <h2>Getting around</h2>
       <ul>
         <li>Click the <strong>edges of the page</strong> to turn it.</li>
@@ -621,14 +833,13 @@
         <li><strong>Home</strong> and <strong>End</strong> jump to the first or last page.</li>
       </ul>
       <h2>Opening a file</h2>
-      <p>Press <strong>Open a file</strong> in the top bar, or simply drag a document from your computer and drop it anywhere on the desk.</p>
+      <p>Press <strong>Open a file</strong> in the top bar, or drag a document from your computer and drop it anywhere on the desk.</p>
       <p>Everything happens locally in your browser — nothing is uploaded anywhere.</p>
       <h2>A note on pagination</h2>
       <p>Word, text, and HTML content is reflowed to fit these pages, so page counts will differ from the original file. PDFs keep their exact layout.</p>
       <p>Enjoy the read.</p>`;
 
     buildBook([cover, ...paginateHTML(inner)]);
-    fit();
   }
 
   /* ================= events ================= */
@@ -647,18 +858,89 @@
   document.getElementById('mode-h').addEventListener('click', () => setMode('h'));
   document.getElementById('mode-v').addEventListener('click', () => setMode('v'));
 
-  document.addEventListener('keydown', e => {
-    if (['ArrowRight', 'ArrowDown', 'PageDown', ' '].includes(e.key)) { e.preventDefault(); flip(1); }
-    else if (['ArrowLeft', 'ArrowUp', 'PageUp'].includes(e.key)) { e.preventDefault(); flip(-1); }
-    else if (e.key === 'Home') { state.pos = 0; render(true); }
-    else if (e.key === 'End') { state.pos = state.sheets.length; render(true); }
+  // zoom controls
+  zoomInBtn.addEventListener('click', zoomIn);
+  zoomOutBtn.addEventListener('click', zoomOut);
+  zoomReset.addEventListener('click', zoomReset_);
+  zoomRange.addEventListener('input', () => { cancelAnimationFrame(zoomAnim); applyZoom(zoomRange.value / 100); });
+
+  // Ctrl/⌘ + scroll (also what trackpad pinch sends on desktop)
+  window.addEventListener('wheel', e => {
+    if (!(e.ctrlKey || e.metaKey)) return;
+    e.preventDefault();
+    cancelAnimationFrame(zoomAnim);
+    const dy = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1);
+    const inside = view.contains(e.target);
+    applyZoom(state.zoom * Math.exp(-dy * 0.0025), inside ? e.clientX : null, inside ? e.clientY : null);
+  }, { passive: false });
+
+  // double-click a page to zoom into that spot
+  view.addEventListener('dblclick', e => {
+    if (e.target.closest('.zone')) return;
+    if (state.zoom > 1.05) zoomTo(1, e.clientX, e.clientY);
+    else zoomTo(2.5, e.clientX, e.clientY);
   });
 
-  // drag & drop
+  // drag to pan while zoomed (mouse)
+  let drag = null, suppressClick = false;
+  view.addEventListener('pointerdown', e => {
+    if (state.zoom <= 1 || e.pointerType !== 'mouse' || e.button !== 0) return;
+    drag = { id: e.pointerId, x: e.clientX, y: e.clientY, sl: view.scrollLeft, st: view.scrollTop, moved: false };
+    e.preventDefault();
+  });
+  window.addEventListener('pointermove', e => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    if (!drag.moved && Math.hypot(dx, dy) > 4) { drag.moved = true; document.body.classList.add('panning'); }
+    if (drag.moved) { view.scrollLeft = drag.sl - dx; view.scrollTop = drag.st - dy; }
+  });
+  window.addEventListener('pointerup', () => {
+    if (!drag) return;
+    if (drag.moved) { suppressClick = true; setTimeout(() => { suppressClick = false; }, 0); }
+    drag = null;
+    document.body.classList.remove('panning');
+  });
+  // a drag that ends over a page edge shouldn't also turn the page
+  view.addEventListener('click', e => {
+    if (suppressClick) { e.stopPropagation(); e.preventDefault(); suppressClick = false; }
+  }, true);
+
+  // two-finger pinch on touch screens
+  let pinch = null;
+  const tDist = t => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+  view.addEventListener('touchstart', e => {
+    if (e.touches.length === 2) { cancelAnimationFrame(zoomAnim); pinch = { d: tDist(e.touches), z: state.zoom }; }
+  }, { passive: true });
+  view.addEventListener('touchmove', e => {
+    if (!pinch || e.touches.length !== 2) return;
+    e.preventDefault();
+    const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+    const my = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+    applyZoom(pinch.z * tDist(e.touches) / pinch.d, mx, my);
+  }, { passive: false });
+  view.addEventListener('touchend', e => { if (e.touches.length < 2) pinch = null; });
+
+  // keyboard
+  document.addEventListener('keydown', e => {
+    if (e.target.matches('input, textarea')) return;
+    const k = e.key;
+    if (k === '+' || k === '=')       { e.preventDefault(); zoomIn(); }
+    else if (k === '-' || k === '_')  { e.preventDefault(); zoomOut(); }
+    else if (k === '0')               { e.preventDefault(); zoomReset_(); }
+    else if (k === 'Escape' && state.zoom > 1) { zoomReset_(); }
+    else if (e.ctrlKey || e.metaKey || e.altKey) { /* leave other shortcuts to the browser */ }
+    else if (['ArrowRight', 'ArrowDown', 'PageDown', ' '].includes(k)) { e.preventDefault(); flip(1); }
+    else if (['ArrowLeft', 'ArrowUp', 'PageUp'].includes(k)) { e.preventDefault(); flip(-1); }
+    else if (k === 'Home') jumpTo(0);
+    else if (k === 'End')  jumpTo(state.sheets.length);
+  });
+
+  // drag & drop files
   const overlay = document.getElementById('drop-overlay');
   let dragDepth = 0;
-  window.addEventListener('dragenter', e => { e.preventDefault(); if (++dragDepth === 1) overlay.classList.add('show'); });
-  window.addEventListener('dragleave', e => { e.preventDefault(); if (--dragDepth <= 0) { dragDepth = 0; overlay.classList.remove('show'); } });
+  const isFileDrag = e => [...(e.dataTransfer?.types || [])].includes('Files');
+  window.addEventListener('dragenter', e => { if (!isFileDrag(e)) return; e.preventDefault(); if (++dragDepth === 1) overlay.classList.add('show'); });
+  window.addEventListener('dragleave', e => { if (!isFileDrag(e)) return; e.preventDefault(); if (--dragDepth <= 0) { dragDepth = 0; overlay.classList.remove('show'); } });
   window.addEventListener('dragover', e => e.preventDefault());
   window.addEventListener('drop', e => {
     e.preventDefault(); dragDepth = 0; overlay.classList.remove('show');
